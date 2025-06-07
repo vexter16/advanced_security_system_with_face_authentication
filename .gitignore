@@ -1,0 +1,8 @@
+# Virtual Environments
+/deepface_env/
+/venv/
+/env/
+/.venv/
+
+# OS files
+.DS_Store

@@ -1,0 +1,28 @@
+
+flask
+flask-cors
+gunicorn
+
+# Core ML & Data Handling
+numpy
+pandas
+scipy
+\
+# Image & Video Processing\
+opencv-python\
+
+# AI Models & Frameworks\
+deepface
+tensorflow
+tensorflow-hub
+ultralytics
+
+# PyTorch (required by ultralytics)
+# Note: A specific version might be needed. We let pip resolve it first.
+torch
+torchvision
+
+requests
+python-dotenv
+passlib[bcrypt]
+twilio

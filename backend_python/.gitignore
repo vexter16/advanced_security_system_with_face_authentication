@@ -1,0 +1,29 @@
+# Python virtual environment
+/myenv/
+/deepface_env/
+/env/
+/.venv/
+*.egg-info/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Temporary files and sensitive data
+/uploads/  # If you use this folder for temporary uploads
+/authorized_operator_face/ # Do not commit reference images of people
+
+# Large model files (we will handle this with Git LFS, but it's good practice to ignore)
+*.pt
+*.pth
+*.weights
+*.onnx
+
+# IDE and OS files
+.vscode/
+.idea/
+*.DS_Store
+
+face_database/
+*.pkl
+uploads/
