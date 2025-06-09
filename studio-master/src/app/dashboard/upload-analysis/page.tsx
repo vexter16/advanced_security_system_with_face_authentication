@@ -19,6 +19,7 @@ interface AnalysisResult {
 
 export default function UploadAnalysisPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [status, setStatus] = useState<AnalysisStatus>('idle');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [streamingText, setStreamingText] = useState('');
@@ -36,15 +37,30 @@ export default function UploadAnalysisPage() {
     const file = event.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      if (videoRef.current) { videoRef.current.src = URL.createObjectURL(file); }
       setStatus('idle');
       setResult(null);
       setError(null);
       setStreamingText('');
       setVqaQuestion('');
       setVqaAnswer('');
+    }else{
+      setSelectedFile(null);
+      setVideoSrc(null);
     }
   };
+
+  useEffect(() => {
+    if (selectedFile) {
+      const url = URL.createObjectURL(selectedFile);
+      setVideoSrc(url);
+
+      // Cleanup function to revoke the object URL when the component unmounts
+      // or the selectedFile changes, preventing memory leaks.
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    }
+  }, [selectedFile]);
 
   // --- NEW: Cleanup logic when user leaves the page ---
   useEffect(() => {
@@ -142,7 +158,14 @@ export default function UploadAnalysisPage() {
             <Label htmlFor="video-upload">Video File</Label>
             <Input id="video-upload" type="file" accept="video/mp4,video/webm" onChange={handleFileChange} disabled={status === 'uploading' || status === 'analyzing'}/>
           </div>
-          {selectedFile && <div className="p-4 border rounded-md"><video ref={videoRef} controls className="w-full max-h-96 rounded" /></div>}
+          {videoSrc && (
+            <div className="p-4 border rounded-md">
+                <video key={videoSrc} controls className="w-full max-h-96 rounded">
+                    <source src={videoSrc} type={selectedFile?.type} />
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+          )}
           <Button onClick={handleAnalyze} disabled={!selectedFile || status === 'analyzing' || status === 'uploading'} className="w-full" size="lg">
             {(status === 'uploading' || status === 'analyzing') ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" />{status === 'uploading' ? 'Uploading...' : 'Analyzing...'}</> : 'Run Deep Analysis'}
           </Button>

@@ -19,6 +19,7 @@ __pycache__/
 *.weights
 *.onnx
 
+
 # IDE and OS files
 .vscode/
 .idea/
