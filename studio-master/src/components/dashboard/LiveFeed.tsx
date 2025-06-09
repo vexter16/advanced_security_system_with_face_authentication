@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardFooter, CardTitle } from "@/componen
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label"; 
-import { Brain, Loader2, PlayCircle, HelpCircle, MessageSquare, AlertTriangle } from 'lucide-react';
+import { Brain, Loader2, PlayCircle, HelpCircle, MessageSquare, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -13,15 +13,15 @@ import { cn } from '@/lib/utils';
 const PYTHON_FLASK_BASE_URL = process.env.NEXT_PUBLIC_PYTHON_FLASK_BASE_URL || "http://localhost:9003";
 
 const videoFeedsConfig = [
-  { id: 'cam1', name: 'SOUTH GATE ENTRANCE', videoSrcRelative: 'videos/video1.mp4', posterUrl: `https://placehold.co/600x400/12222F/73A5C6?text=SOUTH+GATE` },
-  { id: 'cam2', name: 'PERIMETER FENCE - B', videoSrcRelative: 'videos/video2.mp4', posterUrl: `https://placehold.co/600x400/12222F/73A5C6?text=PERIMETER+B` },
-  { id: 'cam3', name: 'LOGISTICS BAY 7', videoSrcRelative: 'videos/video3.mp4', posterUrl: `https://placehold.co/600x400/12222F/73A5C6?text=LOGISTICS+7` },
-  { id: 'cam4', name: 'MESS HALL COURTYARD', videoSrcRelative: 'videos/video4.mp4', posterUrl: `https://placehold.co/600x400/12222F/73A5C6?text=MESS+HALL` },
-  { id: 'cam5', name: 'COMMAND POST OVERWATCH', videoSrcRelative: 'videos/video5.mp4', posterUrl: `https://placehold.co/600x400/12222F/73A5C6?text=COMMAND+POST` },
+    { id: 'cam1', name: 'CONTROL CENTER (RESTRICTED)', videoSrcRelative: 'videos/video7.mp4', type: 'restricted_zone' as const, posterUrl: `https://placehold.co/600x400/4B0082/FFFFFF?text=CONTROL+CENTER` },
+    { id: 'cam2', name: 'PERIMETER FENCE - B', videoSrcRelative: 'videos/video2.mp4', type: 'standard' as const, posterUrl: `https://placehold.co/600x400/12222F/73A5C6?text=PERIMETER+B` },
+    { id: 'cam3', name: 'LOGISTICS BAY 7', videoSrcRelative: 'videos/video3.mp4', type: 'standard' as const, posterUrl: `https://placehold.co/600x400/12222F/73A5C6?text=LOGISTICS+7` },
+    { id: 'cam4', name: 'MESS HALL COURTYARD', videoSrcRelative: 'videos/video4.mp4', type: 'standard' as const, posterUrl: `https://placehold.co/600x400/12222F/73A5C6?text=MESS+HALL` },
+    { id: 'cam5', name: 'COMMAND POST OVERWATCH', videoSrcRelative: 'videos/video1.mp4', type: 'standard' as const, posterUrl: `https://placehold.co/600x400/12222F/73A5C6?text=COMMAND+POST` },
 ];
 
 type ThreatLevel = 'low' | 'medium' | 'high' | 'idle';
-
+type CameraType = 'standard' | 'restricted_zone';
 interface QwenAnalysisData {
   Detected_Activity?: string;
   Security_Status?: string;
@@ -32,8 +32,10 @@ interface QwenAnalysisData {
 
 interface FeedState {
   id: string; name: string; videoUrl: string; videoPathForApi: string; posterUrl: string;
+  type: CameraType;
   parsedAnalysis?: QwenAnalysisData;
   streamingText: string;
+  restrictedZoneResult?: RestrictedZoneResult;
   isAnalyzing: boolean;
   threatLevel: ThreatLevel;
   vqaQuestion: string;
@@ -140,6 +142,47 @@ export default function LiveFeedDashboard() {
             setFeeds(prev => prev.map(f => f.id === feedId ? { ...f, isAnalyzing: false } : f));
         }
     };
+  
+  const handleRestrictedZoneAnalysis = async (feedId: string) => {
+        const feed = feeds.find(f => f.id === feedId);
+        if (!feed) return;
+
+        setFeeds(prev => prev.map(f => f.id === feedId ? { ...f, isAnalyzing: true, restrictedZoneResult: undefined, threatLevel: 'idle' } : f));
+        
+        try {
+            const response = await fetch('/api/analyze-restricted-zone', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ video_path: feed.videoPathForApi }),
+            });
+            const result: RestrictedZoneResult = await response.json();
+            
+            if (!response.ok) {
+                throw new Error((result as any).error || "Failed to analyze restricted zone.");
+            }
+
+            setFeeds(prev => prev.map(f => f.id === feedId ? { ...f, restrictedZoneResult: result, threatLevel: result.threatLevel } : f));
+
+            if (result.threatLevel === 'high' || result.threatLevel === 'medium') {
+                const alertMessage = `VigilanceAI ALERT [${result.threatLevel.toUpperCase()}]: ${result.summary}`;
+                if (result.threatLevel === 'high') {
+                  fetch('/api/send-alert', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: alertMessage }), });
+                }
+                toast({
+                    variant: result.threatLevel === 'high' ? 'destructive' : 'default',
+                    duration: 10000,
+                    title: <div className="flex items-center font-bold"><ShieldAlert className="mr-2 h-6 w-6" /> ACCESS ALERT: {feed.name}</div>,
+                    description: result.summary,
+                });
+            } else {
+                toast({ title: `Zone Scan Complete: ${feed.name}`, description: result.summary });
+            }
+        } catch (error: any) {
+            toast({ variant: "destructive", title: `Zone Scan Failed: ${feed.name}`, description: error.message });
+        } finally {
+            setFeeds(prev => prev.map(f => f.id === feedId ? { ...f, isAnalyzing: false } : f));
+        }
+    };  
 
   const handleVqaQuestionChange = (feedId: string, question: string) => {
     setFeeds(prev => prev.map(f => f.id === feedId ? { ...f, vqaQuestion: question } : f));
@@ -203,6 +246,19 @@ export default function LiveFeedDashboard() {
               <div className="aspect-video bg-muted rounded overflow-hidden relative border border-slate-700">
                 <video src={feed.videoUrl} poster={feed.posterUrl} controls muted loop className="w-full h-full object-cover" />
               </div>
+              {feed.type === 'restricted_zone' ? (
+                                <div className='p-3 border-2 border-dashed border-destructive/50 rounded-lg space-y-3'>
+                                    <h3 className='text-sm font-semibold flex items-center text-destructive'><ShieldAlert className='w-4 h-4 mr-2'/>Restricted Zone Access Control</h3>
+                                    <Button onClick={() => handleRestrictedZoneAnalysis(feed.id)} disabled={feed.isAnalyzing || feed.isVqaAnswering} className="w-full bg-destructive hover:bg-destructive/90 text-destructive-foreground" size="sm">
+                                        {feed.isAnalyzing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />SCANNING PERSONNEL...</> : 'Scan for Unauthorized Personnel'}
+                                    </Button>
+                                    <div className="qwen-output-preview text-xs p-3 border rounded-md min-h-[120px] ...">
+                                        {feed.isAnalyzing && <p className="italic">Analyzing personnel...</p>}
+                                        {feed.restrictedZoneResult && <p className='whitespace-pre-wrap'>{feed.restrictedZoneResult.summary}</p>}
+                                        {!feed.isAnalyzing && !feed.restrictedZoneResult && <p className="italic">Click button to scan personnel in the zone.</p>}
+                                    </div>
+                                </div>
+              ) : (
               <div className='p-3 border border-dashed rounded-lg space-y-3'>
                 <h3 className='text-sm font-semibold flex items-center'><Brain className='w-4 h-4 mr-2'/>Automated Analysis</h3>
                 <Button onClick={() => handleQwenAnalysis(feed.id)} disabled={feed.isAnalyzing || feed.isVqaAnswering} className="w-full bg-primary btn-primary-glow" size="sm">
@@ -212,6 +268,7 @@ export default function LiveFeedDashboard() {
                     {renderQwenAnalysis(feed)}
                 </div>
               </div>
+              )}
             </CardContent>
             <CardFooter className="p-4 pt-0 flex flex-col items-start gap-3 bg-card-foreground/5">
               <Separator />

@@ -16,7 +16,8 @@ import json
 from deepface import DeepFace
 from passlib.context import CryptContext
 from twilio.rest import Client
-
+from ultralytics import YOLO # Ensure YOLO is imported
+from mtcnn import MTCNN
 import yolo_yamnet_analyzer
 
 load_dotenv()
@@ -40,6 +41,7 @@ TWILIO_ACCOUNT_SID = 'YOUR_TWILIO_ACCOUNT_SID_HERE'  # Replace with your actual 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN]) else None
 COMMANDER_PHONE_NUMBER = ""
 
+AUTHORIZED_ROLES_FOR_CONTROL_CENTER = ["Commander", "Lead Analyst"]
 # --- HELPER FUNCTIONS ---
 
 def determine_threat_level(qwen_analysis: dict) -> str:
@@ -126,11 +128,12 @@ def add_face():
     data = request.get_json()
     name = data.get('name')
     password = data.get('password') # NEW
+    role = data.get('role') # Get the role from the request
     image_groups = {"front": data.get('image_urls_front', []), "left": data.get('image_urls_left', []), "right": data.get('image_urls_right', [])}
     
     # NEW: Validate password presence
-    if not name or not any(image_groups.values()) or not password:
-        return jsonify({'message': 'Name, at least one image, and a password are required.'}), 400
+    if not all([name, password, role]):
+        return jsonify({'message': 'Name, password, and role are required.'}), 400
     
     person_folder_name = name.replace(' ', '_')
     person_dir = os.path.join(FACE_DATABASE_PATH, person_folder_name)
@@ -148,13 +151,89 @@ def add_face():
         # Save the hash in a simple text file inside the person's folder
         with open(os.path.join(person_dir, 'p_hash.txt'), 'w') as f:
             f.write(password_hash)
+        with open(os.path.join(person_dir, 'role.txt'), 'w') as f:
+            f.write(role)
 
         remove_representation_pkl()
-        return jsonify({'message': f'Face and password for {name} added successfully.'}), 201
+        return jsonify({'message': f'Operator {name} added with role {role}.'}), 201
     except Exception as e:
         if os.path.exists(person_dir): shutil.rmtree(person_dir)
         return jsonify({'message': f'Error processing request: {str(e)}'}), 500
 
+@app.route('/api/analyze-restricted-zone', methods=['POST'])
+def analyze_restricted_zone_route():
+    data = request.get_json()
+    relative_video_path = data.get('video_path')
+    if not relative_video_path: return jsonify({'error': 'No video_path provided.'}), 400
+    
+    absolute_video_path = os.path.join(VIDEO_BASE_PATH_ON_SERVER, relative_video_path)
+    if not os.path.exists(absolute_video_path): return jsonify({'error': 'Video not found.'}), 404
+
+    try:
+        yolo_model = YOLO(YOLO_MODEL_PATH_CONFIG)
+        cap = cv2.VideoCapture(absolute_video_path)
+        frame_pos = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) / 2)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
+        ret, frame = cap.read()
+        cap.release()
+        if not ret: return jsonify({'error': 'Could not read frame from video.'}), 500
+
+        results = yolo_model(frame, classes=[0], verbose=False) # Class 0 is 'person' in standard YOLO models
+        person_detections = []
+        for r in results:
+            for box in r.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                person_detections.append(frame[y1:y2, x1:x2])
+
+        if not person_detections:
+            return jsonify({"threatLevel": "low", "summary": "No people detected in the control center."})
+
+        detected_personnel = []
+        unauthorized_personnel = []
+        unknown_faces = 0
+        
+        for face_crop in person_detections:
+            try:
+                dfs = DeepFace.find(img_path=face_crop, db_path=FACE_DATABASE_PATH, model_name='Facenet', enforce_detection=True, silent=True)
+                if dfs and isinstance(dfs, list) and len(dfs) > 0 and not dfs[0].empty:
+                    identity_path = dfs[0].iloc[0]['identity']
+                    person_folder_name = os.path.basename(os.path.dirname(identity_path))
+                    person_name = person_folder_name.replace('_', ' ')
+                    
+                    role_path = os.path.join(FACE_DATABASE_PATH, person_folder_name, 'role.txt')
+                    user_role = "No Role Assigned"
+                    if os.path.exists(role_path):
+                        with open(role_path, 'r') as f: user_role = f.read().strip()
+                    
+                    detected_personnel.append({"name": person_name, "role": user_role})
+                    if user_role not in AUTHORIZED_ROLES_FOR_CONTROL_CENTER:
+                        unauthorized_personnel.append({"name": person_name, "role": user_role})
+                else:
+                    unknown_faces += 1
+            except ValueError:
+                unknown_faces += 1
+                continue
+
+        summary = f"Detected Personnel: {[p['name'] for p in detected_personnel] or ['None']}. "
+        threat_level = "low"
+        
+        if unknown_faces > 0:
+            summary += f"WARNING: {unknown_faces} UNKNOWN individual(s) detected. "
+            threat_level = "high"
+        
+        if unauthorized_personnel:
+            summary += f"ALERT: UNAUTHORIZED personnel detected - {', '.join([p['name'] + ' (' + p['role'] + ')' for p in unauthorized_personnel])}."
+            threat_level = "high" if threat_level == "high" else "medium"
+
+        if threat_level == "low":
+            summary = "All personnel detected in the control center are authorized."
+
+        return jsonify({"threatLevel": threat_level, "summary": summary, "details": detected_personnel})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': f'Error during restricted zone analysis: {str(e)}'}), 500
+    
 @app.route('/api/authenticate-password', methods=['POST'])
 def authenticate_password_route():
     data = request.get_json()

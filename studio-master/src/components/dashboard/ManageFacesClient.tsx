@@ -5,6 +5,7 @@ import type { FaceRecord } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -48,7 +49,7 @@ export default function ManageFacesClient() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
-
+  const [newFaceRole, setNewFaceRole] = useState("Guard"); 
   const [newFaceName, setNewFaceName] = useState("");
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -204,12 +205,8 @@ export default function ManageFacesClient() {
   const handleAddFaceSubmit = async () => {
     // Data is now taken from the ref to ensure it's up-to-date
     const { name, front, left, right } = submissionDataRef.current;
-
-    if (!name.trim() || front.length === 0) {
-      toast({ title: "Submission Error", description: "Name and front-facing images are required.", variant: "destructive" });
-      setIsCapturingSequence(false); // Stop sequence on error
-      return;
-    }
+    if (newFacePassword !== confirmPassword) { toast({ title: "Passwords do not match!", variant: "destructive" }); return; }
+    if (!newFaceName.trim() || !newFacePassword || !newFaceRole) { toast({ title: "Missing Fields", description: "Name, password, and role are all required.", variant: "destructive" }); return; }
 
     startTransition(async () => {
       try {
@@ -219,6 +216,7 @@ export default function ManageFacesClient() {
           body: JSON.stringify({
             name: newFaceName,
             password: newFacePassword,
+            role: newFaceRole,
             image_urls_front: front,
             image_urls_left: left,
             image_urls_right: right,
@@ -263,6 +261,7 @@ export default function ManageFacesClient() {
     // These are no longer needed for UI but good to reset
     setCapturedFrontImages([]);
     setCapturedLeftImages([]);
+    setNewFaceRole("Guard"); // Reset role
     setCapturedRightImages([]);
     submissionDataRef.current = { name: "", front: [], left: [], right: [] };
     setNewFacePassword(""); // Reset password fields
@@ -318,7 +317,20 @@ export default function ManageFacesClient() {
               <Label htmlFor="confirm-password" className="text-right">Confirm</Label>
               <Input id="confirm-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="col-span-3" required disabled={isCapturingSequence || isPending} />
             </div>
-
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="role-select" className="text-right">Role</Label>
+              <Select value={newFaceRole} onValueChange={setNewFaceRole} disabled={isCapturingSequence || isPending}>
+                <SelectTrigger id="role-select" className="col-span-3">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Commander">Commander</SelectItem>
+                  <SelectItem value="Lead Analyst">Lead Analyst</SelectItem>
+                  <SelectItem value="Operator">Operator</SelectItem>
+                  <SelectItem value="Guard">Guard</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className="space-y-4 text-center">
               {!isCapturingSequence && (

@@ -26,3 +26,4 @@ requests
 python-dotenv
 passlib[bcrypt]
 twilio
+mtcnn
