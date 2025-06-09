@@ -38,8 +38,7 @@ TWILIO_AUTH_TOKEN='YOUR_TWILIO_AUTH_TOKEN_HERE'  # Replace with your actual Twil
 TWILIO_PHONE_NUMBER="+14155238886"  # Replace with your actual Twilio phone number
 TWILIO_ACCOUNT_SID = 'YOUR_TWILIO_ACCOUNT_SID_HERE'  # Replace with your actual Twilio Account SID
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN]) else None
-COMMANDER_PHONE_NUMBER = "+917010571808"  # Replace with the actual phone number of the commander
-
+COMMANDER_PHONE_NUMBER = ""
 
 # --- HELPER FUNCTIONS ---
 
